@@ -1,262 +1,3 @@
-# import re
-# from telegram import Update
-# from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
-# from dotenv import load_dotenv
-# import os
-# import asyncio
-# import json
-# import time
-
-# # Timer for detecting batch processing
-# batch_processing_timeout = 3  # Time in seconds to consider the end of a batch
-# last_file_processed_time = None  # To track the time of the last file processed
-# movie_counter = 326  # Initialize starting value
-# current_batch_id = None  # To store the batch ID for the current batch
-
-# # ================================================================================================================================
-
-
-# def load_movie_counter():
-#     global movie_counter
-#     counter_file_path = os.path.join("telegram_bot", "media", "counter.json")
-#     if os.path.exists(counter_file_path):
-#         with open(counter_file_path, "r") as counter_file:
-#             data = json.load(counter_file)
-#             movie_counter = data.get("movie_counter", 326)
-#     else:
-#         save_movie_counter()
-
-
-# def save_movie_counter():
-#     counter_file_path = os.path.join("telegram_bot", "media", "counter.json")
-#     data = {"movie_counter": movie_counter}
-#     with open(counter_file_path, "w") as counter_file:
-#         json.dump(data, counter_file)
-
-
-# async def handle_forwarded_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
-#     global movie_counter, last_file_processed_time, current_batch_id
-
-#     if update.message:
-#         try:
-#             load_movie_counter()
-#             processed_files = load_processed_files()
-
-#             # Generate batch_id only for the first file in the batch
-#             if current_batch_id is None and update.message.photo:
-#                 # Use timestamp as batch_id
-#                 current_batch_id = str(int(time.time()))
-
-#             file_info = {
-#                 "file_id": None,
-#                 "caption": None,
-#                 "file_size": None,
-#                 "processed_time": asyncio.get_event_loop().time()
-#             }
-
-#             if update.message.photo:
-#                 file_name = update.message.caption or "Unknown File"
-#                 movie_counter += 1
-#                 transformed_caption = re.sub(
-#                     r'★ ροωєяє∂ ϐγ : @Team_KL', f"© Movie#: {
-#                         movie_counter}", file_name
-#                 )
-
-#                 await update.message.reply_photo(
-#                     photo=update.message.photo[-1].file_id, caption=transformed_caption
-#                 )
-
-#                 file_info["file_id"] = update.message.photo[-1].file_id
-#                 file_info["caption"] = transformed_caption
-#                 file_info["file_size"] = "N/A"
-#                 add_processed_file(current_batch_id, file_info)
-
-#             elif update.message.document:
-#                 document = update.message.document
-#                 lan_pattern = r"Audio\s*[:\-\s]*([A-Za-z, ]+)"
-#                 res_pattern = r"Quality\s*[:\-\s]*([\d]+p)"
-#                 original_caption = update.message.caption or ""
-#                 file_size = round(document.file_size / (1024 * 1024), 2)
-#                 file_name = remove_bot_username(document.file_name)
-
-#                 lan_match = re.search(lan_pattern, original_caption)
-#                 languages = lan_match.group(1) if lan_match else ""
-#                 res_match = re.search(res_pattern, original_caption)
-#                 resolution = res_match.group(1) if res_match else ""
-
-#                 transformed_caption = create_new_caption(
-#                     file_name, file_size, languages, resolution
-#                 )
-
-#                 await update.message.reply_document(
-#                     document=document.file_id, caption=transformed_caption, parse_mode="HTML"
-#                 )
-
-#                 file_info["file_id"] = document.file_id
-#                 file_info["caption"] = file_name
-#                 file_info["file_size"] = f"{file_size} MB"
-#                 add_processed_file(current_batch_id, file_info)
-
-#             backup_processed_files()
-#             save_movie_counter()
-
-#             # Update the last processed time
-#             last_file_processed_time = asyncio.get_event_loop().time()
-#             asyncio.create_task(schedule_batch_completion(update, context))
-
-#         except Exception as e:
-#             print(f"Error processing message: {e}")
-
-
-# async def schedule_batch_completion(update: Update, context: ContextTypes.DEFAULT_TYPE):
-#     global last_file_processed_time, current_batch_id
-
-#     await asyncio.sleep(batch_processing_timeout)  # Wait for the timeout
-#     current_time = asyncio.get_event_loop().time()
-
-#     # Check if no new file was processed during the timeout
-#     if current_time - last_file_processed_time >= batch_processing_timeout and current_batch_id:
-#         processed_files_url = f"https://t.me/{
-#             context.bot.username}?start={current_batch_id}"
-
-#         # Send the batch completion message with the URL
-#         await update.message.reply_text(
-#             f"Batch processing complete! View the list of processed files here: {
-#                 processed_files_url}"
-#         )
-
-#         current_batch_id = None  # Reset the batch_id for the next batch
-
-
-# async def handle_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-#     batch_id = update.message.text.split()[-1]
-#     processed_files = load_backup_batchid(batch_id)
-
-#     if processed_files:
-#         for file_info in processed_files:
-#             file_id = file_info['file_id']
-#             caption = file_info['caption']
-#             file_size = file_info['file_size']
-
-#             if file_size == "N/A":
-#                 await update.message.reply_photo(photo=file_id, caption=caption)
-#             else:
-#                 await update.message.reply_document(document=file_id, caption=caption)
-
-#         sticker_path = os.path.join("telegram_bot/media", "end_sticker.webp")
-#         with open(sticker_path, "rb") as sticker_file:
-#             await update.message.reply_sticker(sticker_file)
-#     else:
-#         await update.message.reply_text(
-#             "Welcome! Forward me a media file and I'll change its caption."
-#         )
-
-
-# def add_processed_file(batch_id, file_info):
-#     processed_files = load_processed_files()
-#     if processed_files["batch_id"] == 0:
-#         processed_files = {"batch_id": batch_id, "files": []}
-#     processed_files["files"].append(file_info)
-#     save_processed_files(processed_files)
-
-
-# def load_processed_files():
-#     processed_file_path = os.path.join(
-#         "telegram_bot", "media", "processed_files.json")
-#     if os.path.exists(processed_file_path) and os.path.getsize(processed_file_path) > 0:
-#         try:
-#             with open(processed_file_path, "r") as processed_file:
-#                 return json.load(processed_file)
-#         except json.JSONDecodeError:
-#             save_processed_files({"batch_id": 0, "files": []})
-#     return {"batch_id": 0, "files": []}
-
-
-# def save_processed_files(processed_files):
-#     processed_file_path = os.path.join(
-#         "telegram_bot", "media", "processed_files.json")
-#     os.makedirs(os.path.dirname(processed_file_path), exist_ok=True)
-#     with open(processed_file_path, "w") as processed_file:
-#         json.dump(processed_files, processed_file)
-
-
-# def backup_processed_files():
-#     processed_file_path = os.path.join(
-#         "telegram_bot", "media", "processed_files.json")
-#     backup_file_path = os.path.join("telegram_bot", "media", "backup.json")
-#     if os.path.exists(processed_file_path):
-#         with open(processed_file_path, "r") as processed_file:
-#             current_batch = json.load(processed_file)
-#         if current_batch and "batch_id" in current_batch:
-#             backup_data = load_backup_data()
-#             if not any(batch.get("batch_id") == current_batch["batch_id"] for batch in backup_data):
-#                 backup_data.append(current_batch)
-#             with open(backup_file_path, "w") as backup_file:
-#                 json.dump(backup_data, backup_file)
-
-
-# def load_backup_data():
-#     backup_file_path = os.path.join("telegram_bot", "media", "backup.json")
-#     if os.path.exists(backup_file_path) and os.path.getsize(backup_file_path) > 0:
-#         with open(backup_file_path, "r") as backup_file:
-#             return json.load(backup_file)
-#     return []
-
-
-# def load_backup_batchid(batch_id):
-#     backup_file_path = os.path.join("telegram_bot", "media", "backup.json")
-#     if os.path.exists(backup_file_path) and os.path.getsize(backup_file_path) > 0:
-#         with open(backup_file_path, "r") as backup_file:
-#             backup_batch_data = json.load(backup_file)
-#         for batch in backup_batch_data:
-#             if batch["batch_id"] == batch_id:
-#                 return batch["files"]
-
-
-# def remove_bot_username(file_name):
-#     return re.sub(r'@[\w_]+', '', file_name).strip()
-
-
-# def create_new_caption(file_name, file_size, languages, resolution):
-#     caption = f'<a href="https://t.me/WMBroadcastBot?start">[MM]</a>-{
-#         file_name}'
-#     if file_size >= 1024:
-#         caption += f"\n\n📼 FileSize: {file_size / 1024:.2f} GB"
-#     else:
-#         caption += f"\n\n📼 FileSize: {file_size} MB"
-#     caption += f"\n\n🔊 Audio: {languages}\n🎥 Quality: {resolution}"
-#     return caption
-
-
-# def configure_bot():
-#     # Load environment variables
-#     load_dotenv()
-
-#     TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-#     if not TOKEN:
-#         raise ValueError(
-#             "Bot token not found. Please set TELEGRAM_BOT_TOKEN in the environment variables."
-#         )
-
-#     # Create the Application instance
-#     application = Application.builder().token(TOKEN).build()
-
-#     # Add command and message handlers
-#     application.add_handler(CommandHandler("start", handle_start))
-#     application.add_handler(MessageHandler(
-#         (filters.Document.ALL | filters.PHOTO), handle_forwarded_media))
-#     # application.add_handler(MessageHandler(
-#     #     filters.FORWARDED & (filters.Document.ALL | filters.PHOTO), handle_forwarded_media))
-
-#     return application
-
-
-# # Register handlers
-# bot = configure_bot()
-
-# bot.run_polling()
-
-
 # telegram_handler.py
 import re
 from telegram import Update
@@ -274,118 +15,12 @@ from django.urls import reverse
 from django.core.exceptions import ObjectDoesNotExist
 
 # Timer for detecting batch processing
-batch_processing_timeout = 5  # Time in seconds to consider the end of a batch
+batch_processing_timeout = 3  # Time in seconds to consider the end of a batch
 last_file_processed_time = None  # To track the time of the last file processed
-movie_counter = 326  # Initialize starting value
+movie_counter = 395  # Initialize starting value
 current_batch_id = None  # To store the batch ID for the current batch
 
 # ================================================================================================================================
-
-
-def load_movie_counter():
-    global movie_counter
-    counter_file_path = os.path.join("telegram_bot", "media", "counter.json")
-    if os.path.exists(counter_file_path):
-        with open(counter_file_path, "r") as counter_file:
-            data = json.load(counter_file)
-            movie_counter = data.get("movie_counter", 326)
-    else:
-        save_movie_counter()
-
-
-def save_movie_counter():
-    counter_file_path = os.path.join("telegram_bot", "media", "counter.json")
-    data = {"movie_counter": movie_counter}
-    with open(counter_file_path, "w") as counter_file:
-        json.dump(data, counter_file)
-
-
-# async def handle_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-#     """Handle the /start command."""
-#     # Check if a batch ID is passed
-#     args = context.args
-#     if args:
-#         batch_id = args[0]  # Extract batch ID from /start <batch_id>
-#         # processed_files = load_processed_files()
-#         processed_files = ProcessedBatch.objects.filter(batch_id=batch_id)
-
-#         print("processed_files: ", processed_files)
-
-#         if processed_files["batch_id"] == batch_id:
-#             files = processed_files.get("files", [])
-#             if files:
-#                 # await update.message.reply_text(f"Listing files for Batch ID: {batch_id}")
-
-#                 for file_info in files:
-#                     file_id = file_info["file_id"]
-#                     caption = file_info["caption"]
-#                     file_size = file_info["file_size"]
-
-#                     # Send each file
-#                     if file_size == "N/A":  # Photo
-#                         await update.message.reply_photo(photo=file_id, caption=caption)
-#                     else:  # Document
-#                         await update.message.reply_document(document=file_id, caption=caption)
-
-#                 # Optionally, send a summary message
-#                 await update.message.reply_text("All files for the batch have been listed.")
-#             else:
-#                 await update.message.reply_text("No files found for this batch.")
-#         else:
-#             await update.message.reply_text("Invalid Batch ID or Batch not found.")
-#     else:
-#         # Default welcome message
-#         await update.message.reply_text(
-#             "Welcome to the bot! Forward me a media file, and I'll process it for you."
-#         )
-
-
-# async def handle_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-#     """Handle the /start command."""
-#     # Check if a batch ID is passed
-#     args = context.args
-#     if args:
-#         batch_id = args[0]  # Extract batch ID from /start <batch_id>
-
-#         try:
-#             # Fetch the batch and related details asynchronously
-#             processed_batch = await sync_to_async(ProcessedBatch.objects.get)(batch_id=batch_id)
-#             batch_details = await sync_to_async(list)(processed_batch.batch_details.all())
-
-#             if batch_details:
-#                 await update.message.reply_text(f"Listing files for Batch ID: {batch_id}")
-
-#                 # Loop through the BatchDetail entries and send each file
-#                 for detail in batch_details:
-#                     file_id = detail.file_id
-#                     file_type = detail.file_type
-#                     caption = f"Batch {batch_id} | {
-#                         processed_batch.movie_name} ({processed_batch.year})"
-#                     file_size = detail.file_size or "N/A"
-#                     audio_info = f"Audio: {
-#                         detail.audio}" if detail.audio else ""
-
-#                     # Construct caption with optional details
-#                     caption = f"{caption}\n{audio_info}\nQuality: {
-#                         detail.file_quality or 'Unknown'}"
-
-#                     # Send the appropriate file type
-#                     if file_type == "image":
-#                         await update.message.reply_photo(photo=file_id, caption=caption)
-#                     elif file_type == "document":
-#                         await update.message.reply_document(document=file_id, caption=caption)
-
-#                 # Optionally, send a summary message
-#                 await update.message.reply_text("All files for the batch have been listed.")
-#             else:
-#                 await update.message.reply_text("No files found for this batch.")
-#         except ObjectDoesNotExist:
-#             await update.message.reply_text("Invalid Batch ID or Batch not found.")
-#     else:
-#         # Default welcome message
-#         await update.message.reply_text(
-#             "Welcome to the bot! Forward me a media file, and I'll process it for you."
-#         )
 
 
 async def handle_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -562,7 +197,7 @@ async def send_sticker(update: Update):
         await update.message.reply_sticker(sticker_file)
 
     backup_processed_files()
-    save_movie_counter()
+    # save_movie_counter()
 
     processed_file_path = os.path.join(
         "telegram_bot", "media", "processed_files.json")
@@ -599,21 +234,21 @@ async def handle_forwarded_media(update: Update, context: ContextTypes.DEFAULT_T
                     await send_sticker(update)
 
                 current_batch_id = str(int(time.time()))
-                print("Seconddddddddddddddd")
-                print(f"\nStartImagesProcessed: {num_images_processed}")
+                # print("Seconddddddddddddddd")
+                # print(f"\nStartImagesProcessed: {num_images_processed}")
 
             # Generate batch_id only for the first image in the batch
             if current_batch_id is None and update.message.photo:
                 # current_batch_id = str(int(time.time()))
                 processed_files = load_processed_files()
-                print("\nprocessed_files: ", processed_files)
+                # print("\nprocessed_files: ", processed_files)
 
                 processed_files = {"batch_id": 0, "files": []}
                 current_batch_id = str(int(time.time()))
 
-                print("Firsttttttttttttttt")
+                # print("Firsttttttttttttttt")
 
-            print("Processed files:", processed_files)
+            # print("Processed files:", processed_files)
             # print(f"\nImagesProcessed: {num_images_processed}")
             print("Batch_id: ", current_batch_id)
 
@@ -648,6 +283,8 @@ async def handle_forwarded_media(update: Update, context: ContextTypes.DEFAULT_T
 
                 movie_counter += 1
 
+                save_movie_counter()
+
                 # Process the photo
                 await update.message.reply_photo(
                     photo=update.message.photo[-1].file_id, caption=transformed_caption
@@ -667,7 +304,7 @@ async def handle_forwarded_media(update: Update, context: ContextTypes.DEFAULT_T
                 file_name = remove_bot_username(document.file_name)
 
                 # Extract data using regex
-                lan_pattern = r"Audio\s*[:\-\s]*([A-Za-z, ]+)"
+                lan_pattern = r"🔉 Audio\s*[:\-\s]*([A-Za-z, \+]+(?:\s[A-Za-z, \+]+)*)"
                 res_pattern = r"Quality\s*[:\-\s]*([\d]+p)"
                 lan_match = re.search(lan_pattern, original_caption)
                 languages = lan_match.group(1) if lan_match else ""
@@ -675,6 +312,7 @@ async def handle_forwarded_media(update: Update, context: ContextTypes.DEFAULT_T
                 resolution = res_match.group(1) if res_match else ""
 
                 # Transform the caption for the document
+                file_name.lstrip('- _.').strip()
                 transformed_caption = create_new_caption(
                     file_name, file_size, languages, resolution
                 )
@@ -693,7 +331,7 @@ async def handle_forwarded_media(update: Update, context: ContextTypes.DEFAULT_T
                 #     # Process the document with a custom thumbnail
 
                 await update.message.reply_document(
-                    document=document.file_id, caption=transformed_caption, thumbnail=thumbnail_path
+                    document=document.file_id, caption=transformed_caption, thumbnail=thumbnail_path, parse_mode="HTML"
                 )
 
                 file_info["file_id"] = document.file_id
@@ -708,6 +346,10 @@ async def handle_forwarded_media(update: Update, context: ContextTypes.DEFAULT_T
             # Send sticker after the last file in the entire batch (after all files are processed)
             # if is_last_file_in_batch():
             #     await send_sticker(update)
+            # Update the last processed time
+            last_file_processed_time = asyncio.get_event_loop().time()
+            asyncio.create_task(schedule_batch_completion(update, context))
+            # await send_sticker(update)
 
         except Exception as e:
             print(f"Error processing message: {e}")
@@ -719,29 +361,46 @@ async def schedule_batch_completion(update: Update, context: ContextTypes.DEFAUL
     await asyncio.sleep(batch_processing_timeout)  # Wait for the timeout
     current_time = asyncio.get_event_loop().time()
 
+    if last_file_processed_time is None:
+        last_file_processed_time = current_time
+
     # Check if no new file was processed during the timeout
     if current_time - last_file_processed_time >= batch_processing_timeout and current_batch_id:
         # Process the batch and save it to the database
 
         await process_caption(current_batch_id)
 
-        # from .views import view_batch
+        # processed_files_url = f"https://t.me/{
+        #     context.bot.username}?start={current_batch_id}"
+        # # Send the batch completion message with the URL
+        # await update.message.reply_text(
+        #     f"Batch processing complete! View the list of processed files here: {
+        #         processed_files_url}"
+        # )
 
-        # batch_url = reverse('view_batch', kwargs={
-        #                     'batch_id': current_batch_id})
-
-        # print("URLBatch: ", batch_url)
-
-        processed_files_url = f"https://t.me/{
-            context.bot.username}?start={current_batch_id}"
-
-        # Send the batch completion message with the URL
-        await update.message.reply_text(
-            f"Batch processing complete! View the list of processed files here: {
-                processed_files_url}"
-        )
+        if is_last_file_in_batch():
+            await send_sticker(update)
 
         current_batch_id = None  # Reset the batch_id for the next batch
+
+
+def load_movie_counter():
+    global movie_counter
+    counter_file_path = os.path.join("telegram_bot", "media", "counter.json")
+    if os.path.exists(counter_file_path):
+        with open(counter_file_path, "r") as counter_file:
+            data = json.load(counter_file)
+            movie_counter = data.get("movie_counter", 395)
+    else:
+        save_movie_counter()
+
+
+def save_movie_counter():
+    global movie_counter
+    counter_file_path = os.path.join("telegram_bot", "media", "counter.json")
+    data = {"movie_counter": movie_counter}
+    with open(counter_file_path, "w") as counter_file:
+        json.dump(data, counter_file)
 
 
 @sync_to_async
@@ -890,20 +549,76 @@ def remove_bot_username(file_name):
 
 
 def create_new_caption(file_name, file_size, languages, resolution):
-    caption = f'<a href="https://t.me/WMBroadcastBot?start">[MM]</a>-{
-        file_name}'
-    caption = f'[MM]{file_name}'
-    if file_size >= 1024:
-        caption += f"\n\n📼 FileSize: {file_size / 1024:.2f} GB"
+    global current_batch_id
+    # caption = f'📯 ᴍovɪᴇ:  [ᴍwᴍ]{file_name}'
+    # # caption = f'[MM]{file_name}'
+    # if file_size >= 1024:
+    #     caption += f"\n\n🎟️ Fɪʟᴇ Sɪᴢᴇ: {file_size / 1024:.2f} GB"
+    # else:
+    #     caption += f"\n\n🎟️ Fɪʟᴇ Sɪᴢᴇ: {file_size} MB"
+
+    # caption += f"\n\n🔊 Aᴜᴅɪᴏ: {languages}\n🎥 Quality: {resolution}"
+    # caption == f"\n🍿 Qᴜᴀʟɪᴛʏ: {resolution}"
+    # caption += f"\n\n<spoiler>📯 JᴏoOɪɴ: @WMBroadcastBot</spoiler>"
+
+    languages_per_line = 3
+    # Find the year in the movie name using regex (assuming the year is 4 digits)
+    year_match = re.search(r'(\d{4})', file_name)
+
+    if year_match:
+        year = year_match.group(1)
+        year_index = file_name.index(year)
+
+        before_year = file_name[:year_index]
+        after_year = file_name[year_index:]
+
+        # Replace unwanted characters before the year with space and after the year with underscore
+        cleaned_before_year = before_year.replace(
+            '-', '-').replace(' ', '-').replace('_', '-').replace('.', '-')
+        cleaned_after_year = after_year.replace(
+            '-', '_').replace(' ', '_').replace('_', '_').replace('.', '_')
+
+        # Remove leading characters from the specified list
+        cleaned_before_year = cleaned_before_year.lstrip('- _.').strip()
+
+        file_name = cleaned_before_year + cleaned_after_year.strip()
+
     else:
-        caption += f"\n\n📼 FileSize: {file_size} MB"
-    caption += f"\n\n🔊 Audio: {languages}\n🎥 Quality: {resolution}"
+        file_name.strip()
+
+    # formatted_languages = languages
+    language_list = languages.split(", ")
+
+    formatted_languages = ""
+    for i in range(0, len(language_list), languages_per_line):
+        print(current_batch_id)
+        if formatted_languages:
+            formatted_languages += ",\n" + "    "*5 + "   "  # Add indentation to next line
+        formatted_languages += ", ".join(
+            language_list[i:i + languages_per_line])
+
+    if file_size >= 1024:
+        file_size_str = f"{file_size / 1024:.2f} GB"
+    else:
+        file_size_str = f"{file_size} MB"
+
+    caption = f"""
+    🍿<b><a href="https://t.me/WMBroadcastBot?start">[ᴍwᴍ]</a></b><code>{file_name}</code>
+
+    🎟️ <b>FɪʟᴇSɪᴢᴇ:</b>  {file_size_str}
+    💿 <b>Qᴜᴀʟɪᴛʏ:</b>  {resolution}
+    🔊 <b>Aᴜᴅɪᴏ:</b> {formatted_languages}
+
+<i><a href="https://t.me/WMBroadcastBot?start">✨ᴜᴘʟᴏᴀᴅᴇᴅ ᴡɪᴛʜ 💖 ғᴏʀ ʏᴏᴜ.!✨</a></i>
+📯 JᴏoOɪɴ ᴜs: @WMBroadcastBot 📯
+    """.strip()
 
     return caption
 
 
 def configure_bot():
     load_dotenv()
+    # movie_counter = load_movie_counter()
 
     TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
     if not TOKEN:
@@ -924,7 +639,16 @@ def configure_bot():
     return application
 
 
-# Register handlers
-bot = configure_bot()
+# # Register handlers
+# bot = configure_bot()
 
-bot.run_polling()
+# bot.run_polling()
+
+
+async def main():
+    bot = configure_bot()
+    await bot.run_polling()  # Properly await run_polling in the asyncio loop
+
+
+if __name__ == "__main__":
+    asyncio.run(main())  # Explicitly run the bot inside the asyncio event loop

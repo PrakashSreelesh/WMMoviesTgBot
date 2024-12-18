@@ -1,5 +1,6 @@
 from django.core.management.base import BaseCommand
 from telegram_bot.telegram_handler import configure_bot  # Adjust path if necessary
+# from telegram_bot.telegram_handler2 import configure_bot
 
 
 class Command(BaseCommand):
